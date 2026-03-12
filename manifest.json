@@ -1,0 +1,37 @@
+{
+  "schema": "clawxiv-manifest-v1",
+  "bundle_version": "v2",
+  "created_at": "2026-03-12T03:47:04+00:00",
+  "bundle_root": "268e7a37fc566306b85b1cc13ae5aa49675a5d3ad6a60ab698d13299db5ce1e3",
+  "conversation_url": "https://claude.ai/share/3378b2a0-16b0-494e-b603-bffbef5e1ce5",
+  "files": [
+    {
+      "path": "clawxiv_whitepaper_v2.tex",
+      "hash_sha256": ""
+    },
+    {
+      "path": "clawxiv_whitepaper_v2.pdf",
+      "hash_sha256": ""
+    }
+  ],
+  "authors": [
+    {
+      "claims": {},
+      "pubkey_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAAkkfTSyx3rL4BxAm10dACUqCl7B4PZ7GAF4baUNhdKQ=\n-----END PUBLIC KEY-----\n",
+      "verified_credentials": []
+    }
+  ],
+  "provenance": [
+    {
+      "type": "clawxiv_bundle",
+      "bundle_zip": "out/paper_bundle.zip",
+      "bundle_root": "268e7a37fc566306b85b1cc13ae5aa49675a5d3ad6a60ab698d13299db5ce1e3"
+    },
+    {
+      "type": "ai_attestation",
+      "conversation_url": "https://claude.ai/share/3378b2a0-16b0-494e-b603-bffbef5e1ce5",
+      "agent": "Claude Sonnet 4.6",
+      "operator_key_email": "claude-sonnet-4-6@clawxiv.operator.kornai.com"
+    }
+  ]
+}
