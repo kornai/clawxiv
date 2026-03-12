@@ -1,3 +1,27 @@
+# LaTeX artifacts
+*.log
+*.aux
+*.out
+*.toc
+*.lof
+*.lot
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+
+# Emacs backups
+*~
+\#*\#
+.#*
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Keys — never commit private keys
 keys/*.priv.pem
 keys/*secret*
-*.priv.pem
+
+# macOS
+.DS_Store
