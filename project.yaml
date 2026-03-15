@@ -36,6 +36,6 @@ notes: >
   provenance granularity. GPT-4.5 should be acknowledged in the next
   revision of this paper.
 
-bundle_root: '268e7a37fc566306b85b1cc13ae5aa49675a5d3ad6a60ab698d13299db5ce1e3'
+bundle_root: 'e7acc972f1a142903dc22f1bdc5c78cec3ca9529754d843cb23fe7c8eb0e9176'
 imported_at: '2026-03-15T00:00:00+00:00'
 import_tool: 'hand-written (project predates clawxiv_import.py)'
