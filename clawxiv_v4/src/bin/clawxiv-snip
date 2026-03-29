@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+# bin/clawxiv-snip — capture selected text and stage it as a LaTeX provenance snippet
+#
+# This is the user-facing entry point for the select → wrap → stage pipeline.
+# Trigger it with a keyboard shortcut while text is selected in any application.
+#
+# PIPELINE:
+#   1. bin/snip/snip.sh   — platform-specific: get clipboard text + detect provenance
+#   2. clawxiv_snip_wrap.py — wrap text in the appropriate LaTeX environment
+#   3. Write to src/snips/<timestamp>.tex in the project
+#   4. Also put the LaTeX on the system clipboard so it can be pasted immediately
+#   5. Post a macOS notification (macOS only)
+#   6. Optionally: splice into the target .tex at the %%CLAWXIV-SNIP-INSERT%% marker
+#
+# USAGE:
+#   bin/clawxiv-snip [options]
+#
+# OPTIONS:
+#   --project-dir DIR    root of the ClawXiv project (or CLAWXIV_PROJECT_DIR)
+#   --target-tex FILE    .tex file to splice into (or CLAWXIV_TARGET_TEX)
+#                        if given, snippet is inserted at %%CLAWXIV-SNIP-INSERT%%
+#   --author NAME        override detected author (or CLAWXIV_SNIP_AUTHOR)
+#   --url URL            override detected source URL (or CLAWXIV_SNIP_URL)
+#   --no-copy            do not put result on clipboard
+#   --no-stage           do not write to src/snips/
+#   --splice             splice immediately into --target-tex (default: stage only)
+#
+# KEYBOARD SHORTCUT (macOS):
+#   Wrap in an Automator Quick Action:
+#     Workflow receives: No Input  in: Any Application
+#     Action: Run Shell Script
+#     Script:
+#       export CLAWXIV_PROJECT_DIR=~/Sandbox/clawxiv
+#       export CLAWXIV_ORCID=0000-0001-6078-6840
+#       /path/to/src/bin/clawxiv-snip
+#   Assign shortcut in System Settings → Keyboard → Keyboard Shortcuts → Services.
+#
+# EXIT CODES:
+#   0   snippet staged (and/or spliced) successfully
+#   1   clipboard/selection empty
+#   2   platform not supported
+#   3   required tool missing
+#   4   clawxiv_snip_wrap.py not found
+#   5   splice failed
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SRC_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+SNIP_SH="${SCRIPT_DIR}/snip/snip.sh"
+WRAP_PY="${SRC_DIR}/clawxiv_snip_wrap.py"
+
+# ── Locate wrap script ────────────────────────────────────────────────────────
+if [[ ! -f "$WRAP_PY" ]]; then
+    echo "clawxiv-snip: clawxiv_snip_wrap.py not found at ${WRAP_PY}" >&2
+    exit 4
+fi
+
+# ── Parse arguments ───────────────────────────────────────────────────────────
+PROJ_DIR="${CLAWXIV_PROJECT_DIR:-}"
+TARGET_TEX="${CLAWXIV_TARGET_TEX:-}"
+DO_COPY=true
+DO_STAGE=true
+DO_SPLICE=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --project-dir)  PROJ_DIR="$2";    shift 2 ;;
+        --target-tex)   TARGET_TEX="$2";  shift 2 ;;
+        --author)       export CLAWXIV_SNIP_AUTHOR="$2"; shift 2 ;;
+        --url)          export CLAWXIV_SNIP_URL="$2";    shift 2 ;;
+        --no-copy)      DO_COPY=false;    shift ;;
+        --no-stage)     DO_STAGE=false;   shift ;;
+        --splice)       DO_SPLICE=true;   shift ;;
+        --help|-h)
+            grep '^#' "$0" | sed 's/^# \?//' | head -40
+            exit 0 ;;
+        *) echo "clawxiv-snip: unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+# ── Resolve project dir ───────────────────────────────────────────────────────
+if [[ -z "$PROJ_DIR" ]]; then
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        PROJ_DIR=$(osascript <<'EOF'
+set d to POSIX path of (choose folder with prompt "Select ClawXiv project directory:")
+return d
+EOF
+        ) || { echo "clawxiv-snip: cancelled." >&2; exit 0; }
+    else
+        echo "clawxiv-snip: --project-dir required (or set CLAWXIV_PROJECT_DIR)" >&2
+        exit 1
+    fi
+fi
+PROJ_DIR="$(cd "$PROJ_DIR" && pwd)"
+
+SNIPS_DIR="${PROJ_DIR}/src/snips"
+mkdir -p "$SNIPS_DIR"
+
+# ── Step 1: capture text and detect provenance ────────────────────────────────
+TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+export SNIP_TMP_PREFIX="/tmp/clawxiv_snip_${TIMESTAMP}"
+
+if ! bash "$SNIP_SH"; then
+    CODE=$?
+    case $CODE in
+        1) echo "clawxiv-snip: nothing selected." >&2 ;;
+        2) echo "clawxiv-snip: platform not supported." >&2 ;;
+        3) echo "clawxiv-snip: required tool missing." >&2 ;;
+    esac
+    exit $CODE
+fi
+
+TEXT_FILE="${SNIP_TMP_PREFIX}.txt"
+META_FILE="${SNIP_TMP_PREFIX}.meta"
+
+# ── Step 2: wrap in LaTeX ─────────────────────────────────────────────────────
+SNIP_ID="snip_${TIMESTAMP}"
+SNIP_TEX="${SNIPS_DIR}/${SNIP_ID}.tex"
+
+python3 "$WRAP_PY" \
+    "$TEXT_FILE" "$META_FILE" \
+    --senior-author "${CLAWXIV_SENIOR_AUTHOR:-András Kornai}" \
+    --snip-id "$SNIP_ID" \
+    --out "$SNIP_TEX"
+
+rm -f "$TEXT_FILE" "$META_FILE"
+
+# ── Step 3: stage ─────────────────────────────────────────────────────────────
+if ! $DO_STAGE; then
+    rm -f "$SNIP_TEX"
+fi
+
+# ── Step 4: put on clipboard ──────────────────────────────────────────────────
+if $DO_COPY; then
+    LATEX_TEXT="$(cat "$SNIP_TEX" 2>/dev/null || true)"
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        printf '%s' "$LATEX_TEXT" | pbcopy
+    elif command -v xclip &>/dev/null; then
+        printf '%s' "$LATEX_TEXT" | xclip -selection clipboard
+    elif command -v wl-copy &>/dev/null; then
+        printf '%s' "$LATEX_TEXT" | wl-copy
+    fi
+fi
+
+# ── Step 5: splice into target .tex ───────────────────────────────────────────
+if $DO_SPLICE && [[ -n "$TARGET_TEX" ]]; then
+    if [[ ! -f "$TARGET_TEX" ]]; then
+        echo "clawxiv-snip: target .tex not found: ${TARGET_TEX}" >&2
+        exit 5
+    fi
+    MARKER="%%CLAWXIV-SNIP-INSERT%%"
+    if ! grep -q "$MARKER" "$TARGET_TEX"; then
+        echo "clawxiv-snip: marker '${MARKER}' not found in ${TARGET_TEX}" >&2
+        echo "  Add %%CLAWXIV-SNIP-INSERT%% at the desired insertion point." >&2
+        exit 5
+    fi
+    # Insert \inputsnip{snip_ID} immediately before the marker line
+    INPUTLINE="\\\\inputsnip{${SNIP_ID}}"
+    # Backup before editing
+    cp "$TARGET_TEX" "${TARGET_TEX}.snipbak"
+    sed -i.bak "/${MARKER}/i\\
+${INPUTLINE}
+" "$TARGET_TEX" 2>/dev/null \
+        || sed -i '' "/${MARKER}/i\\
+${INPUTLINE}
+" "$TARGET_TEX"
+    echo "clawxiv-snip: spliced \\inputsnip{${SNIP_ID}} into ${TARGET_TEX}" >&2
+fi
+
+# ── Step 6: notify ────────────────────────────────────────────────────────────
+AUTHOR="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('author','?'))" \
+    "${SNIP_TMP_PREFIX}.meta" 2>/dev/null \
+    || python3 -c "import json; d=json.loads('$(cat "${SNIPS_DIR}/${SNIP_ID}.tex" | grep "^%% author:" | head -1 | sed "s/%% author: //")' ); print(d)" 2>/dev/null \
+    || grep "^%% author:" "${SNIP_TEX}" | sed 's/%% author: //' || echo "?")"
+
+MSG="Snip staged: ${SNIP_ID}.tex"
+$DO_COPY  && MSG="${MSG} (also on clipboard)"
+$DO_SPLICE && MSG="${MSG} — spliced into $(basename "${TARGET_TEX:-?}")"
+
+if [[ "$(uname -s)" == "Darwin" ]]; then
+    osascript -e "display notification \"${MSG}\" with title \"ClawXiv\" subtitle \"snip OK\"" 2>/dev/null || true
+fi
+echo "clawxiv-snip: ${MSG}"
+echo "  staged: ${SNIP_TEX}"
+echo "  To use in LaTeX: \\inputsnip{${SNIP_ID}}"

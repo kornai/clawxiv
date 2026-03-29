@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+# bin/fig-capture — capture a screen region and add it to a ClawXiv project
+#
+# This is the user-facing entry point for the capture → fig-add pipeline.
+# It calls bin/capture/capture.sh (which dispatches per platform), then
+# calls clawxiv fig-add on the result.
+#
+# USAGE
+#   bin/fig-capture --project-dir <dir> [options]
+#
+# OPTIONS
+#   --project-dir DIR    root of the ClawXiv project (required unless
+#                        CLAWXIV_PROJECT_DIR is set)
+#   --name NAME          filename for the figure (default: fig_<timestamp>.png)
+#   --caption TEXT       caption stored in the sidecar JSON
+#   --source-url URL     URL the image was obtained from
+#   --license STR        license string (e.g. CC-BY-4.0)
+#   --orcid ORCID        ORCID of the capturing author (default: $CLAWXIV_ORCID)
+#   --log PATH           path to clawxiv_log.jsonl
+#   --signer-priv PATH   Ed25519 private key for signing log events
+#
+# ENVIRONMENT VARIABLES (all overridable by flags)
+#   CLAWXIV_PROJECT_DIR  default project directory
+#   CLAWXIV_ORCID        default author ORCID
+#   CLAWXIV_KEYS_DIR     directory containing author.priv.pem (default: ~/.clawxiv/keys)
+#   CLAWXIV_PY           path to clawxiv.py (default: same dir as this script)
+#   CLAWXIV_PLATFORM     override platform detection (see bin/capture/README.md)
+#
+# KEYBOARD SHORTCUT (macOS)
+#   Wrap this script in an Automator Quick Action:
+#     Workflow receives: No Input  in: Any Application
+#     Action: Run Shell Script
+#     Shell: /bin/bash
+#     Pass input: to stdin
+#     Script body:
+#       export CLAWXIV_PROJECT_DIR=~/path/to/project
+#       export CLAWXIV_ORCID=0000-0001-6078-6840
+#       /path/to/bin/fig-capture
+#   Assign a keyboard shortcut in System Settings → Keyboard → Keyboard Shortcuts
+#   → Services.
+#
+# EXIT CODES
+#   0   figure added successfully
+#   1   user cancelled capture
+#   2   platform not supported
+#   3   CSAM check failed (figure NOT added; rejection logged)
+#   4   clawxiv.py not found
+#   5   capture tool not found
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+CAPTURE_SH="${SCRIPT_DIR}/capture/capture.sh"
+
+# ── Locate clawxiv.py ─────────────────────────────────────────────────────────
+CLAWXIV_PY="${CLAWXIV_PY:-${SCRIPT_DIR}/../clawxiv.py}"
+if [[ ! -f "$CLAWXIV_PY" ]]; then
+    if command -v clawxiv &>/dev/null; then
+        CLAWXIV_PY="$(command -v clawxiv)"
+    else
+        msg="fig-capture: clawxiv.py not found at ${CLAWXIV_PY}. Set CLAWXIV_PY."
+        osascript -e "display alert \"ClawXiv\" message \"${msg}\"" 2>/dev/null || true
+        echo "$msg" >&2; exit 4
+    fi
+fi
+
+# ── Parse arguments ───────────────────────────────────────────────────────────
+PROJ_DIR="${CLAWXIV_PROJECT_DIR:-}"
+FIG_NAME=""
+CAPTION=""
+SOURCE_URL=""
+LICENSE_STR=""
+ORCID="${CLAWXIV_ORCID:-}"
+LOG_PATH=""
+SIGNER_PRIV="${CLAWXIV_KEYS_DIR:-${HOME}/.clawxiv/keys}/author.priv.pem"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --project-dir)  PROJ_DIR="$2";    shift 2 ;;
+        --name)         FIG_NAME="$2";    shift 2 ;;
+        --caption)      CAPTION="$2";     shift 2 ;;
+        --source-url)   SOURCE_URL="$2";  shift 2 ;;
+        --license)      LICENSE_STR="$2"; shift 2 ;;
+        --orcid)        ORCID="$2";       shift 2 ;;
+        --log)          LOG_PATH="$2";    shift 2 ;;
+        --signer-priv)  SIGNER_PRIV="$2"; shift 2 ;;
+        --help|-h)
+            sed -n '/^# USAGE/,/^[^#]/p' "$0" | grep '^#' | sed 's/^# \?//'
+            exit 0 ;;
+        *) echo "fig-capture: unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+# ── Resolve project dir ───────────────────────────────────────────────────────
+if [[ -z "$PROJ_DIR" ]]; then
+    # Running as Quick Action with no terminal: prompt via AppleScript
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        PROJ_DIR=$(osascript <<'EOF'
+set d to POSIX path of (choose folder with prompt "Select ClawXiv project directory:")
+return d
+EOF
+        ) || { echo "fig-capture: cancelled." >&2; exit 1; }
+    else
+        echo "fig-capture: --project-dir required (or set CLAWXIV_PROJECT_DIR)" >&2
+        exit 1
+    fi
+fi
+PROJ_DIR="$(cd "$PROJ_DIR" && pwd)"
+
+# Auto-discover log path
+if [[ -z "$LOG_PATH" && -f "${PROJ_DIR}/out/clawxiv_log.jsonl" ]]; then
+    LOG_PATH="${PROJ_DIR}/out/clawxiv_log.jsonl"
+fi
+
+# ── Capture ───────────────────────────────────────────────────────────────────
+TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+FIG_NAME="${FIG_NAME:-fig_${TIMESTAMP}.png}"
+export CAPTURE_OUT="${TMPDIR:-/tmp}/clawxiv_cap_${TIMESTAMP}.png"
+
+if ! bash "$CAPTURE_SH"; then
+    CODE=$?
+    case $CODE in
+        1) echo "fig-capture: cancelled by user." >&2 ;;
+        2) echo "fig-capture: platform not supported." >&2 ;;
+        3) echo "fig-capture: capture tool not found." >&2 ;;
+    esac
+    exit $CODE
+fi
+
+# Rename to desired figure name in temp dir
+TMPFIG="${TMPDIR:-/tmp}/${FIG_NAME}"
+mv "$CAPTURE_OUT" "$TMPFIG"
+
+# ── Build fig-add arguments ───────────────────────────────────────────────────
+FIG_ARGS=(
+    python3 "$CLAWXIV_PY" fig-add
+    --fig         "$TMPFIG"
+    --project-dir "$PROJ_DIR"
+)
+[[ -n "$ORCID"       ]] && FIG_ARGS+=(--orcid      "$ORCID")
+[[ -n "$SOURCE_URL"  ]] && FIG_ARGS+=(--source-url "$SOURCE_URL")
+[[ -n "$LICENSE_STR" ]] && FIG_ARGS+=(--license    "$LICENSE_STR")
+[[ -n "$CAPTION"     ]] && FIG_ARGS+=(--caption    "$CAPTION")
+[[ -n "$LOG_PATH"    ]] && FIG_ARGS+=(--log        "$LOG_PATH")
+[[ -f "$SIGNER_PRIV" ]] && FIG_ARGS+=(--signer-priv "$SIGNER_PRIV")
+
+# ── Run fig-add ───────────────────────────────────────────────────────────────
+OUTPUT=$("${FIG_ARGS[@]}" 2>&1)
+CODE=$?
+rm -f "$TMPFIG"
+
+if [[ $CODE -eq 0 ]]; then
+    LATEX=$(echo "$OUTPUT" | grep '^LaTeX' | sed 's/LaTeX *: *//')
+    MSG="${FIG_NAME} added to src/fig/"
+    [[ -n "$LATEX" ]] && MSG="${MSG}
+${LATEX}"
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        osascript -e "display notification \"${MSG}\" with title \"ClawXiv\" subtitle \"fig-capture OK\"" 2>/dev/null || true
+    fi
+    echo "$OUTPUT"
+elif [[ $CODE -eq 3 ]]; then
+    msg="CSAM check failed — ${FIG_NAME} NOT added. See log."
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        osascript -e "display alert \"ClawXiv: figure rejected\" message \"${msg}\" as critical" 2>/dev/null || true
+    fi
+    echo "$OUTPUT" >&2
+    exit 3
+else
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        osascript -e "display alert \"ClawXiv: fig-add error\" message \"${OUTPUT}\" as critical" 2>/dev/null || true
+    fi
+    echo "$OUTPUT" >&2
+    exit $CODE
+fi

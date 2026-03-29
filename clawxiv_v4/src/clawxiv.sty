@@ -1,0 +1,170 @@
+%% clawxiv.sty — ClawXiv provenance typesetting macros
+%%
+%% Provides differential typesetting of text snippets by provenance:
+%%   \seniorquote   — corresponding/senior human author (boxed)
+%%   \aiquote       — AI co-author (margin mark + hyperlinked attribution)
+%%   \coauthorquote — other human co-authors (ruled block + attribution)
+%%   \humanprompt   — alias for \seniorquote (prompt sent to AI)
+%%   \airesp        — alias for \aiquote    (AI response)
+%%   \snipinsert    — placeholder marking the snip insertion point
+%%   \inputsnip     — include a staged snip file
+%%
+%% Design principles:
+%%   - Provenance is visible at paragraph level, not word level.
+%%   - The senior author's own words are visually primary (box draws
+%%     the eye but is not distracting).
+%%   - AI and co-author attributions are hyperlinked so that a reader
+%%     of the PDF can reach the original session.
+%%   - All macros accept an optional source URL; when absent the
+%%     attribution is still typeset but the link is suppressed.
+%%   - The package is self-contained: it loads its own dependencies.
+
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{clawxiv}[2026/03/29 v0.4 ClawXiv provenance macros]
+
+%% ── Dependencies ────────────────────────────────────────────────────────────
+\RequirePackage{mdframed}       % framed/boxed environments
+\RequirePackage{xcolor}         % color definitions
+\RequirePackage{hyperref}       % \href
+\RequirePackage{xparse}         % \NewDocumentEnvironment, \NewDocumentCommand
+\RequirePackage{marginnote}     % \marginnote for AI attribution marks
+\RequirePackage{ragged2e}       % \RaggedRight in margin notes
+\RequirePackage{microtype}      % better typography inside boxes
+
+%% ── Color palette ────────────────────────────────────────────────────────────
+%% Intentionally muted so as not to overwhelm the main text.
+\definecolor{cxw@SeniorBg}   {RGB}{245,248,252}   % pale blue-grey
+\definecolor{cxw@SeniorRule} {RGB}{100,140,190}   % steel blue
+\definecolor{cxw@AIBg}       {RGB}{250,248,240}   % pale amber
+\definecolor{cxw@AIRule}     {RGB}{190,150,80}    % ochre
+\definecolor{cxw@CoAuthorBg} {RGB}{248,248,248}   % near-white
+\definecolor{cxw@CoAuthorRule}{RGB}{160,160,160}  % medium grey
+\definecolor{cxw@LinkColor}  {RGB}{40,80,160}     % hyperlink blue
+
+%% ── mdframed styles ──────────────────────────────────────────────────────────
+\mdfdefinestyle{cxw@senior}{
+  backgroundcolor  = cxw@SeniorBg,
+  linecolor        = cxw@SeniorRule,
+  linewidth        = 1.2pt,
+  leftline         = true,
+  rightline        = false,
+  topline          = false,
+  bottomline       = false,
+  innerleftmargin  = 6pt,
+  innerrightmargin = 4pt,
+  innertopmargin   = 3pt,
+  innerbottommargin= 3pt,
+  skipabove        = 4pt,
+  skipbelow        = 4pt,
+}
+
+\mdfdefinestyle{cxw@ai}{
+  backgroundcolor  = cxw@AIBg,
+  linecolor        = cxw@AIRule,
+  linewidth        = 0.8pt,
+  leftline         = true,
+  rightline        = false,
+  topline          = false,
+  bottomline       = false,
+  innerleftmargin  = 6pt,
+  innerrightmargin = 4pt,
+  innertopmargin   = 3pt,
+  innerbottommargin= 3pt,
+  skipabove        = 4pt,
+  skipbelow        = 4pt,
+}
+
+\mdfdefinestyle{cxw@coauthor}{
+  backgroundcolor  = cxw@CoAuthorBg,
+  linecolor        = cxw@CoAuthorRule,
+  linewidth        = 0.6pt,
+  leftline         = true,
+  rightline        = false,
+  topline          = false,
+  bottomline       = false,
+  innerleftmargin  = 6pt,
+  innerrightmargin = 4pt,
+  innertopmargin   = 3pt,
+  innerbottommargin= 3pt,
+  skipabove        = 4pt,
+  skipbelow        = 4pt,
+}
+
+%% ── Internal helpers ─────────────────────────────────────────────────────────
+
+%% \cxw@attrib{author}{timestamp}{url} — attribution line, linked if url given
+\newcommand{\cxw@attrib}[3]{%
+  \noindent
+  {\footnotesize\color{cxw@LinkColor}%
+    \ifx\relax#3\relax
+      [\textit{#1}, #2]%
+    \else
+      \href{#3}{[\textit{#1}, #2]}%
+    \fi
+  }\par\smallskip
+}
+
+%% ── Public environments ──────────────────────────────────────────────────────
+
+%% \begin{seniorquote}{author}{timestamp}[url]
+%%   Text from the senior/corresponding human author.
+%%   Typeset in a blue-ruled box.  URL is optional.
+\NewDocumentEnvironment{seniorquote}{m m O{}}{%
+  \begin{mdframed}[style=cxw@senior]
+  \cxw@attrib{#1}{#2}{#3}%
+}{%
+  \end{mdframed}
+}
+
+%% \begin{aiquote}{author}{timestamp}[url]
+%%   Text from an AI co-author.
+%%   Typeset in an amber-ruled box with a clickable attribution line.
+\NewDocumentEnvironment{aiquote}{m m O{}}{%
+  \begin{mdframed}[style=cxw@ai]
+  \cxw@attrib{#1}{#2}{#3}%
+}{%
+  \end{mdframed}
+}
+
+%% \begin{coauthorquote}{author}{timestamp}[url]
+%%   Text from a human co-author other than the senior author.
+%%   Typeset in a grey-ruled box.
+\NewDocumentEnvironment{coauthorquote}{m m O{}}{%
+  \begin{mdframed}[style=cxw@coauthor]
+  \cxw@attrib{#1}{#2}{#3}%
+}{%
+  \end{mdframed}
+}
+
+%% ── Aliases for the human-prompt / AI-response interaction style ─────────────
+%% These match the \humanprompt / \airesp convention used in prior appendices.
+
+\NewDocumentEnvironment{humanprompt}{O{András Kornai} O{\today}}{%
+  \begin{seniorquote}{#1}{#2}%
+}{%
+  \end{seniorquote}%
+}
+
+\NewDocumentEnvironment{airesp}{m O{\today} O{}}{%
+  % #1 = AI author name, #2 = timestamp, #3 = source URL
+  \begin{aiquote}{#1}{#2}[#3]%
+}{%
+  \end{aiquote}%
+}
+
+%% ── Snip insertion point marker ──────────────────────────────────────────────
+%% Place  %%CLAWXIV-SNIP-INSERT%%  in your .tex source as a LaTeX comment.
+%% The clawxiv-snip tool and 'make integrate-snips' look for this string.
+%% The macro below is a no-op at typeset time; it is only a visual reminder
+%% when editing the source.
+
+\newcommand{\snipinsert}{%
+  %% CLAWXIV-SNIP-INSERT
+}
+
+%% \inputsnip{filename} — include a staged snip file from src/snips/
+\newcommand{\inputsnip}[1]{%
+  \input{snips/#1}%
+}
+
+\endinput

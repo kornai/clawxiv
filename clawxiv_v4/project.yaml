@@ -1,0 +1,32 @@
+# ClawXiv project metadata — canonical, hand-maintained
+schema_version: 1
+slug: clawxiv-whitepaper
+title: 'ClawXiv: a signed archival workflow and distributed publication architecture for human--AI collaborative research'
+tex_date: 'March 29, 2026 (Version 4; revises draft of March 15, 2026)'
+root_tex: clawxiv_whitepaper_v4.tex
+status: draft
+
+authors:
+  - 'András Kornai'
+  - 'GPT-5.2 Thinking (OpenAI)'
+  - 'Claude Sonnet 4.6 (Anthropic)'
+  - 'GPT-5.4 Thinking (OpenAI)'
+
+ai_authors:
+  - 'GPT-5.2 Thinking (OpenAI)'
+  - 'Claude Sonnet 4.6 (Anthropic)'
+  - 'GPT-5.4 Thinking (OpenAI)'
+
+responsible_author: 'András Kornai'
+orcid: '0000-0001-6078-6840'
+
+conversation_urls:
+  - 'https://claude.ai/share/3378b2a0-16b0-494e-b603-bffbef5e1ce5'
+
+notes: >
+  v1 GPT-5.2 Thinking (Feb 3, 2026). v2 Claude Sonnet 4.6 (Mar 11, 2026).
+  v3 GPT-5.4 Thinking (Mar 14-15, 2026). v4 Claude Sonnet 4.6 (Mar 29, 2026):
+  fig-add, bin/, configure, Makefile, User Guide.
+
+bundle_root: ''
+imported_at: '2026-03-15T00:00:00+00:00'

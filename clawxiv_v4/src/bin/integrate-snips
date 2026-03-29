@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# bin/integrate-snips — splice all pending staged snips into a target .tex file
+#
+# This is the batch companion to clawxiv-snip's --splice flag.
+# It processes all .tex files in src/snips/ that are not yet referenced
+# in the target file, inserting them at the %%CLAWXIV-SNIP-INSERT%% marker
+# in chronological order.
+#
+# After integration, the snip files remain in src/snips/ (they are part of
+# the bundle) but the target .tex now references them via \inputsnip{}.
+#
+# USAGE:
+#   bin/integrate-snips --target-tex src/mypaper.tex [--project-dir DIR]
+#
+# The target .tex must contain the line:
+#   %%CLAWXIV-SNIP-INSERT%%
+# (as a LaTeX comment, possibly wrapped in \snipinsert{} from clawxiv.sty)
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJ_DIR="${CLAWXIV_PROJECT_DIR:-}"
+TARGET_TEX=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --project-dir)  PROJ_DIR="$2";   shift 2 ;;
+        --target-tex)   TARGET_TEX="$2"; shift 2 ;;
+        --help|-h) grep '^#' "$0" | sed 's/^# \?//'; exit 0 ;;
+        *) echo "integrate-snips: unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+[[ -z "$TARGET_TEX"  ]] && { echo "integrate-snips: --target-tex required" >&2; exit 1; }
+[[ -z "$PROJ_DIR"    ]] && PROJ_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+PROJ_DIR="$(cd "$PROJ_DIR" && pwd)"
+SNIPS_DIR="${PROJ_DIR}/src/snips"
+MARKER="%%CLAWXIV-SNIP-INSERT%%"
+
+[[ -f "$TARGET_TEX" ]] || { echo "integrate-snips: not found: ${TARGET_TEX}" >&2; exit 1; }
+grep -q "$MARKER" "$TARGET_TEX" || {
+    echo "integrate-snips: marker '${MARKER}' not found in ${TARGET_TEX}" >&2
+    echo "  Add %%CLAWXIV-SNIP-INSERT%% at the desired insertion point in the .tex file." >&2
+    exit 1
+}
+
+# Find staged snips not yet referenced in target
+PENDING=()
+for snip in $(ls -1 "${SNIPS_DIR}"/snip_*.tex 2>/dev/null | sort); do
+    ID="$(basename "$snip" .tex)"
+    if ! grep -q "\\\\inputsnip{${ID}}" "$TARGET_TEX"; then
+        PENDING+=("$ID")
+    fi
+done
+
+if [[ ${#PENDING[@]} -eq 0 ]]; then
+    echo "integrate-snips: no pending snips to integrate."
+    exit 0
+fi
+
+echo "integrate-snips: integrating ${#PENDING[@]} snip(s) into ${TARGET_TEX}"
+
+# Build the block of \inputsnip lines to insert
+INSERTS=""
+for ID in "${PENDING[@]}"; do
+    INSERTS="${INSERTS}\\\\inputsnip{${ID}}\n"
+    echo "  + ${ID}"
+done
+
+# Backup
+cp "$TARGET_TEX" "${TARGET_TEX}.integratebak"
+
+# Insert before the marker (portable sed)
+python3 - "$TARGET_TEX" "$MARKER" "$INSERTS" << 'PYEOF'
+import sys, pathlib, re
+
+target  = pathlib.Path(sys.argv[1])
+marker  = sys.argv[2]
+inserts = sys.argv[3].replace('\\n', '\n').replace('\\\\', '\\')
+
+lines = target.read_text(encoding='utf-8').splitlines(keepends=True)
+out   = []
+for line in lines:
+    if marker in line:
+        out.append(inserts)
+    out.append(line)
+target.write_text(''.join(out), encoding='utf-8')
+print(f"integrate-snips: done. ({len(lines)} lines → {len(out)} lines)")
+PYEOF
