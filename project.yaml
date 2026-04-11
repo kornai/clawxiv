@@ -1,41 +1,50 @@
-# ClawXiv project metadata
-# This file is canonical. project.tex is a rendered view.
-# Hand-written at import time (project predates clawxiv_import.py).
-
+# ClawXiv project metadata — canonical, hand-maintained
 schema_version: 1
 slug: clawxiv-whitepaper
-title: 'ClawXiv: a public, distributed, author-signed preprint archive'
-tex_date: 'March 9, 2026 (Version 2; revises draft of February 3, 2026)'
-root_tex: clawxiv_whitepaper_v3.tex
-status: published
-venue: ''
-arxiv_id: ''
+title: 'ClawXiv: a signed archival workflow and distributed publication architecture for human--AI collaborative research'
+tex_date: 'April 2026 (v4.rc4; revises v4.rc3 of April 11, 2026)'
+root_tex: clawxiv_whitepaper_v4.tex
+arxiv_tex: clawxiv_whitepaper_arxiv.tex
+status: release-candidate
+version: v4.rc4
+
+versioning_convention: >
+  Internal review candidates: vN.rcM (provenance-logged, not pushed publicly).
+  Clean major label vN assigned only after all parties sign the bundle.
+  Only signed major versions are committed to git and submitted to arXiv.
+  bundle_root and arxiv_id are recorded here once v4 is finalized.
 
 authors:
-  - 'Andr\'as Kornai'
+  - 'András Kornai'
   - 'GPT-5.2 Thinking (OpenAI)'
   - 'Claude Sonnet 4.6 (Anthropic)'
+  - 'GPT-5.4 Thinking (OpenAI)'
 
 ai_authors:
   - 'GPT-5.2 Thinking (OpenAI)'
   - 'Claude Sonnet 4.6 (Anthropic)'
+  - 'GPT-5.4 Thinking (OpenAI)'
 
-responsible_author: 'Andr\'as Kornai'
+responsible_author: 'András Kornai'
+orcid: '0000-0001-6078-6840'
 
 conversation_urls:
   - 'https://claude.ai/share/3378b2a0-16b0-494e-b603-bffbef5e1ce5'
 
 notes: >
-  v1 authored by GPT-5.2 Thinking (February 3, 2026).
-  v2 revised with Claude Sonnet 4.6 (March 11, 2026): economics design,
-  scaling claim precision, governance framing, AI authorship analysis.
-  Published to IPFS; bundle_root below is from the v2 push.
-  The import toolchain (clawxiv_import.py, bundle-create.sh, bundle-push.sh)
-  was developed in the session recorded at the conversation URL above,
-  with contributions from GPT-4.5 (OpenAI) on registry design and
-  provenance granularity. GPT-4.5 should be acknowledged in the next
-  revision of this paper.
+  v1 GPT-5.2 Thinking (Feb 3, 2026). v2 Claude Sonnet 4.6 (Mar 11, 2026).
+  v3 GPT-5.4 Thinking (Mar 14-15, 2026). v4 Claude Sonnet 4.6 (Mar 29, 2026):
+  fig-add, bin/, configure, Makefile, User Guide.
+  v4.rc3 Claude Sonnet 4.6 (Apr 11, 2026): sidecar-signing transition,
+  operator-held-key critique accepted, awaiting GPT-5.4 review.
+  v4.rc4 GPT-5.4 Thinking (Apr 11, 2026): append-only DESIGN_HISTORY update,
+  ai_keygen deprecation, verifier/schema reconciliation, bundle-sign redesign
+  toward explicit signer identity with secondary custody observations only,
+  whitepaper text updated to sidecar attestation model, best-effort treatment
+  of inaccessible historical AI co-authors recorded explicitly.
 
-bundle_root: 'e7acc972f1a142903dc22f1bdc5c78cec3ca9529754d843cb23fe7c8eb0e9176'
+bundle_root: ''
+arxiv_id: ''
+ipfs_cid: ''
+
 imported_at: '2026-03-15T00:00:00+00:00'
-import_tool: 'hand-written (project predates clawxiv_import.py)'

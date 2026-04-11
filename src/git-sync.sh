@@ -148,7 +148,7 @@ cp_to "${PROJ_DIR}/requirements.txt" "${GIT_DIR}" 2>/dev/null || true
 echo ""
 echo "--- Removing stale top-level files from git repo ---"
 STALE=(
-    ai_keygen.sh
+    ai_keygen.sh   # deprecated historical stub
     appendix_a.tex
     appendix.tex
     clawxiv.py

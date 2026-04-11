@@ -1,0 +1,198 @@
+#!/usr/bin/env sh
+# configure — autodetect build environment and write config.mk
+#
+# Run once per machine or after installing new tools.
+# Writes config.mk which is included by the top-level Makefile.
+#
+# Usage:
+#   ./configure [--prefix DIR] [--python PATH] [--latex ENGINE]
+#
+# After running, inspect config.mk and then: make check
+
+set -e
+
+PREFIX=/usr/local
+PYTHON=""
+LATEX_ENGINE=""
+PROJ_DIR="$(pwd)"
+CONFIG_MK="config.mk"
+
+# ── Parse arguments ───────────────────────────────────────────────────────────
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --prefix)  PREFIX="$2";       shift 2 ;;
+        --python)  PYTHON="$2";       shift 2 ;;
+        --latex)   LATEX_ENGINE="$2"; shift 2 ;;
+        --help)
+            echo "Usage: ./configure [--prefix DIR] [--python PATH] [--latex ENGINE]"
+            exit 0 ;;
+        *) echo "configure: unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+found() { command -v "$1" >/dev/null 2>&1; }
+check() {
+    printf "  %-30s" "$1 ..."
+    if found "$2"; then
+        echo "ok ($(command -v "$2"))"
+        return 0
+    else
+        echo "NOT FOUND"
+        return 1
+    fi
+}
+warn() { echo "  WARNING: $*"; }
+
+# ── Platform ──────────────────────────────────────────────────────────────────
+OS="$(uname -s)"
+ARCH="$(uname -m)"
+case "$OS" in
+    Darwin)  PLATFORM=macos ;;
+    Linux)
+        if [ -n "${WAYLAND_DISPLAY:-}" ]; then PLATFORM=linux_wayland
+        else PLATFORM=linux_x11; fi ;;
+    MINGW*|MSYS*|CYGWIN*) PLATFORM=windows ;;
+    *) PLATFORM=unknown ;;
+esac
+
+echo "configure: ClawXiv"
+echo "  OS:       $OS"
+echo "  Arch:     $ARCH"
+echo "  Platform: $PLATFORM"
+echo ""
+
+# ── Python ────────────────────────────────────────────────────────────────────
+echo "Checking Python..."
+if [ -z "$PYTHON" ]; then
+    for candidate in python3 python; do
+        if found "$candidate"; then
+            VER=$("$candidate" -c 'import sys; print("%d.%d" % sys.version_info[:2])')
+            MAJOR=${VER%%.*}
+            if [ "$MAJOR" -ge 3 ]; then
+                PYTHON="$candidate"
+                break
+            fi
+        fi
+    done
+fi
+if [ -z "$PYTHON" ]; then
+    echo "  ERROR: Python 3 not found. Install Python >= 3.8."
+    exit 1
+fi
+echo "  Python: $($PYTHON --version) at $(command -v $PYTHON)"
+
+echo "  Checking Python packages..."
+MISSING_PY=""
+for pkg in cryptography; do
+    printf "    %-28s" "$pkg ..."
+    if $PYTHON -c "import $pkg" 2>/dev/null; then echo "ok"
+    else echo "MISSING"; MISSING_PY="$MISSING_PY $pkg"; fi
+done
+for pkg in PIL; do
+    printf "    %-28s" "Pillow (PIL) ..."
+    if $PYTHON -c "from PIL import Image" 2>/dev/null; then echo "ok (image heuristics enabled)"
+    else echo "not found (install Pillow to enable image-type heuristics; optional)"; fi
+done
+if [ -n "$MISSING_PY" ]; then
+    echo "  Install missing packages: pip install$MISSING_PY"
+    exit 1
+fi
+
+# ── LaTeX ─────────────────────────────────────────────────────────────────────
+echo ""
+echo "Checking LaTeX..."
+if [ -z "$LATEX_ENGINE" ]; then
+    for engine in pdflatex xelatex lualatex; do
+        if found "$engine"; then LATEX_ENGINE="$engine"; break; fi
+    done
+fi
+if [ -z "$LATEX_ENGINE" ]; then
+    warn "No LaTeX engine found. 'make bundle' will require --skip-compile."
+    LATEX_ENGINE=none
+else
+    echo "  Engine: $LATEX_ENGINE at $(command -v $LATEX_ENGINE)"
+fi
+
+# ── Capture tools ─────────────────────────────────────────────────────────────
+echo ""
+echo "Checking capture tools..."
+CAPTURE_TOOL=none
+case "$PLATFORM" in
+    macos)
+        if [ -f /usr/sbin/screencapture ]; then
+            echo "  screencapture: ok (macOS built-in)"
+            CAPTURE_TOOL=screencapture
+        else
+            warn "screencapture not found (unexpected on macOS)"
+        fi ;;
+    linux_x11)
+        for tool in flameshot scrot import; do
+            if found "$tool"; then
+                echo "  $tool: ok"
+                CAPTURE_TOOL="$tool"; break
+            fi
+        done
+        [ "$CAPTURE_TOOL" = "none" ] && warn "No X11 capture tool found. Install flameshot." ;;
+    linux_wayland)
+        if found grim && found slurp; then
+            echo "  grim + slurp: ok"
+            CAPTURE_TOOL=grim
+        elif found gnome-screenshot; then
+            echo "  gnome-screenshot: ok"
+            CAPTURE_TOOL=gnome-screenshot
+        else
+            warn "No Wayland capture tool found. Install grim+slurp."
+        fi ;;
+    windows)
+        warn "Windows capture tools must be configured manually (see bin/capture/windows.ps1)."
+        CAPTURE_TOOL=manual ;;
+esac
+
+# ── Upload targets ────────────────────────────────────────────────────────────
+echo ""
+echo "Checking publish targets..."
+HAS_IPFS=no;   found ipfs           && { echo "  ipfs: ok";   HAS_IPFS=yes;   }
+HAS_GIT=no;    found git            && { echo "  git: ok";    HAS_GIT=yes;    }
+HAS_RSYNC=no;  found rsync          && { echo "  rsync: ok";  HAS_RSYNC=yes;  }
+
+# ── Keys ─────────────────────────────────────────────────────────────────────
+echo ""
+echo "Checking keys..."
+KEYS_DIR="${CLAWXIV_KEYS_DIR:-${HOME}/.clawxiv/keys}"
+if [ -f "${KEYS_DIR}/author.priv.pem" ]; then
+    echo "  author.priv.pem: found at ${KEYS_DIR}"
+else
+    warn "author.priv.pem not found in ${KEYS_DIR}"
+    warn "Run: python3 src/clawxiv.py keygen --private-key ~/.clawxiv/keys/author.priv.pem --public-key keys/author.pub.pem"
+fi
+
+# ── Write config.mk ───────────────────────────────────────────────────────────
+cat > "$CONFIG_MK" << MKEOF
+# config.mk — generated by ./configure on $(date -u +%Y-%m-%dT%H:%M:%SZ)
+# Do not edit by hand; re-run ./configure to regenerate.
+
+PLATFORM      = $PLATFORM
+OS            = $OS
+ARCH          = $ARCH
+PYTHON        = $PYTHON
+LATEX_ENGINE  = $LATEX_ENGINE
+CAPTURE_TOOL  = $CAPTURE_TOOL
+HAS_IPFS      = $HAS_IPFS
+HAS_GIT       = $HAS_GIT
+HAS_RSYNC     = $HAS_RSYNC
+PREFIX        = $PREFIX
+KEYS_DIR      = $KEYS_DIR
+PROJ_DIR      = $PROJ_DIR
+MKEOF
+
+echo ""
+echo "config.mk written."
+echo ""
+echo "Next steps:"
+echo "  make check       # verify the configuration"
+echo "  make bundle      # compile and sign a local bundle"
+echo "  make publish     # push bundle to public infrastructure"
+echo ""
+echo "To bind fig-capture to a keyboard shortcut, see:"
+echo "  src/bin/fig-capture --help"

@@ -1,0 +1,808 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{enumitem}
+\usepackage{csquotes}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage{clawxiv}   % provenance environments: seniorquote, aiquote, coauthorquote
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  citecolor=blue,
+  urlcolor=blue
+}
+
+% Define JSON as a listings language (not built in)
+\lstdefinelanguage{json}{
+  basicstyle=\ttfamily\small,
+  morestring=[b]",
+  stringstyle=\color{blue!60!black},
+  literate=
+    *{0}{{{\color{teal}0}}}{1}
+     {1}{{{\color{teal}1}}}{1}
+     {2}{{{\color{teal}2}}}{1}
+     {3}{{{\color{teal}3}}}{1}
+     {4}{{{\color{teal}4}}}{1}
+     {5}{{{\color{teal}5}}}{1}
+     {6}{{{\color{teal}6}}}{1}
+     {7}{{{\color{teal}7}}}{1}
+     {8}{{{\color{teal}8}}}{1}
+     {9}{{{\color{teal}9}}}{1}
+     {:}{{{\color{gray!80!black}{:}}}}{1}
+     {,}{{{\color{gray!80!black}{,}}}}{1},
+}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  backgroundcolor=\color{gray!8},
+  commentstyle=\color{gray!60!black},
+  xleftmargin=1em,
+  xrightmargin=1em,
+}
+
+\title{ClawXiv: a signed archival workflow and distributed publication architecture\\
+for human--AI collaborative research}
+\author{
+Andr\'as Kornai\thanks{Corresponding author.
+SZTAKI Institute of Computer Science and
+Department of Algebra and Geometry, Budapest University of Technology and Economics.
+\texttt{andras@kornai.com}.
+ORCID: \href{https://orcid.org/0000-0001-6078-6840}{0000-0001-6078-6840}.
+This arXiv submission uses a human-only byline for venue compatibility;
+full AI contribution and provenance disclosure appears below and in the
+companion ClawXiv bundle.}
+}
+\date{April 2026\\
+\small\emph{(arXiv submission version, adapted from v4.rc3)}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We propose \emph{ClawXiv}, a workflow and archive architecture for mixed
+human--AI research.  The immediate problem is not only public dissemination of
+preprints, but also reliable migration from volatile chat sessions and
+heterogeneous \LaTeX/Bib\TeX\ working directories into durable, signed,
+inspectable research artifacts.  ClawXiv distinguishes four states:
+\emph{legacy seed}, \emph{normalized project}, \emph{signed bundle}, and
+\emph{published artifact}.  The implemented kernel is local and author-side:
+an import script normalizes existing work into a project directory; a
+bundle-creation script compiles, signs, and packages the work into a
+content-addressed archival unit; and a publication script verifies and pushes
+the bundle to public infrastructure.  Version~4 adds a \texttt{bin/} utility
+layer with platform-dispatching screen capture, a figure-ingestion pipeline
+with a content-safety stub, a \texttt{configure} script, and a top-level
+\texttt{Makefile}.  A companion ClawXiv bundle and repository release provide
+the operational scripts, provenance records, and user-facing documentation for
+the current implementation. Code is available at \texttt{github.com/kornai/clawxiv}.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+%% ============================================================
+\section{Motivation and scope}
+%% ============================================================
+
+Contemporary research increasingly uses interactive AI systems to draft
+and refine \LaTeX\ manuscripts, assemble Bib\TeX\ bibliographies,
+generate code, and iterate on technical arguments.
+However, current chat-centric workflows have weak checkpointing: state
+loss---due to UI limits, link snapshotting failures, or account
+changes---forces rework and undermines scholarly continuity.
+Even when the work product survives, it often survives in a heterogeneous
+and fragile form: a directory of \texttt{.tex} and \texttt{.bib} files,
+figures, notes, and links to one or more chat sessions.
+
+ClawXiv is designed as a durable substrate for these workflows.
+Its immediate aim is modest and concrete: make it possible for a human
+scholar and one or more AI co-authors to convert such a seed into a
+canonical project directory, then into a signed bundle, and only then
+into a public artifact.
+Its longer-horizon aim is larger: to support a world-readable,
+distributed, author-signed preprint archive for such artifacts.
+
+ClawXiv is \emph{not} a general social network, and it is \emph{not}
+a venue that promises editorial judgment of scientific quality.
+Its platform-level checks are mechanical and infrastructural: bundle
+well-formedness, buildability, signature integrity, and a narrow
+content-safety floor.
+Scientific quality control remains the responsibility of authors and
+downstream readers.
+
+%% ============================================================
+\section{Implemented system versus planned architecture}
+%% ============================================================
+
+\subsection{Implemented now (v4)}
+
+The current codebase already supports a local author-side workflow:
+
+\begin{enumerate}[leftmargin=*,itemsep=0.4em]
+\item \textbf{Import and normalization.}  An interactive import script
+  transforms an existing working seed into a ClawXiv project directory.
+\item \textbf{Local bundle creation.}  A \texttt{bundle-create.sh} script
+  compiles, signs, and packages the project.
+\item \textbf{Publication push.}  \texttt{bundle-push.sh} verifies and
+  publishes to IPFS/IPNS and GitHub.
+\item \textbf{Figure ingestion} (\texttt{clawxiv fig-add}).  Adds a
+  figure to \texttt{src/fig/}, writes a provenance sidecar, and runs
+  the CSAM content-safety stub.
+\item \textbf{Platform-dispatching screen capture}
+  (\texttt{bin/capture/}).  Calls the native capture tool for macOS,
+  Linux/X11, Linux/Wayland, or Windows; stubs are provided for all
+  platforms.
+\item \textbf{Capture-to-bundle pipeline}
+  (\texttt{bin/fig-capture}).  Chains screen capture into
+  \texttt{fig-add} in a single user gesture.
+\item \textbf{Build system} (\texttt{configure} + \texttt{Makefile}).
+  Autodetects Python, \LaTeX, capture tools, and publish targets; writes
+  \texttt{config.mk}.
+\end{enumerate}
+
+\subsection{Planned, not yet fully realized}
+
+\begin{enumerate}[leftmargin=*,itemsep=0.4em]
+\item Distributed discovery and replication at scale.
+\item Classifier authorities with appeals and auditable logs.
+\item Dynamic anti-spam economics with vouching and micropayments.
+\item Production CSAM hash-list integration (sponsoring institution
+  under evaluation; see Section~\ref{sec:safety}).
+\item A mature global registry and mirror ecosystem.
+\item Native Linux/Wayland and Windows capture implementations
+  (stubs are present in the released codebase).
+\end{enumerate}
+
+%% ============================================================
+\section{Lifecycle: from seed to public artifact}
+%% ============================================================
+
+The central workflow is:
+\[
+\text{legacy seed}
+\;\to\;
+\text{normalized project}
+\;\to\;
+\text{signed bundle}
+\;\to\;
+\text{published artifact.}
+\]
+
+\subsection{Legacy seed}
+
+A seed is the pre-ClawXiv state of a paper: typically a directory of
+\texttt{.tex}/\texttt{.bib} files, figures, notes, and conversation
+links.
+Seeds are heterogeneous and poor as archival objects.
+
+\subsection{Normalized project}
+
+A normalized project is the first ClawXiv-native state.
+It is a mutable directory intended for continued work and review.
+It contains at minimum:
+\begin{itemize}[leftmargin=*,itemsep=0.3em]
+\item \texttt{src/}: the copied or normalized source tree,
+\item \texttt{src/fig/}: figures, each with a sidecar
+  \texttt{<name>.json} provenance sidecar,
+\item \texttt{src/bin/}: utility scripts,
+\item \texttt{project.yaml}: canonical project metadata,
+\item \texttt{keys/}: public keys for all authors,
+\item \texttt{out/}: derived artifacts and release outputs.
+\end{itemize}
+
+The normalized project---not the immutable bundle---is the correct
+object for day-to-day co-research.
+
+\subsection{Signed bundle}
+
+The signed bundle is an immutable archival snapshot.
+It contains a canonical manifest, file hashes, source materials,
+optional derived artifacts such as the compiled PDF, and signatures
+over the manifest.
+The bundle is content-addressed; changing any file changes the
+identifier.
+
+\subsection{Published artifact}
+
+The published artifact is a signed bundle made publicly reachable
+through one or more channels: IPFS/IPNS, GitHub, web gateways,
+institutional mirrors, or later ClawXiv-native indices.
+Publication is the irreversible public step and should remain explicit.
+
+%% ============================================================
+\section{Design goals and non-goals}
+%% ============================================================
+
+\subsection{Goals}
+
+\begin{enumerate}[label=\textbf{G\arabic*},leftmargin=*,itemsep=0.4em]
+\item \textbf{Shareability.}  Every published bundle is world-readable,
+  addressable, and mirrorable without permission.
+\item \textbf{Durability.}  Conversational interfaces are generators,
+  not systems of record.
+\item \textbf{Responsibility.}  Each bundle is cryptographically bound
+  to one or more author identities.
+\item \textbf{Scaling.}  The architecture supports many mirrors and
+  content addressing.
+\item \textbf{Governance.}  Classification decisions are logged, signed,
+  and appealable.
+\item \textbf{Economics.}  The publication layer deters spam and makes
+  long-term storage economically viable.
+\end{enumerate}
+
+\subsection{Non-goals}
+
+\begin{enumerate}[label=\textbf{N\arabic*},leftmargin=*,itemsep=0.4em]
+\item No platform-level truth policing beyond the narrow safety floor.
+\item No requirement that authorship be purely human.
+\item No promise that the distributed network is already complete.
+\item No strong anonymity guarantees.
+\end{enumerate}
+
+%% ============================================================
+\section{Archival unit: project and bundle}
+%% ============================================================
+
+\subsection{The project directory}
+
+The project directory is the unit of ongoing work.
+Its metadata should be readable by humans and AI systems alike.
+ClawXiv uses \texttt{project.yaml} as canonical metadata and
+\texttt{project.tex} as a rendered, human-facing view.
+
+\subsection{The bundle}
+
+A bundle contains:
+\begin{itemize}[leftmargin=*,itemsep=0.3em]
+\item \textbf{Source tree}: \LaTeX, Bib\TeX, figures/data,
+\item \textbf{Manifest}: deterministic file listing with hashes,
+\item \textbf{Metadata}: title, authorship, bundle identifier,
+\item \textbf{Provenance}: paper-level provenance and traceability,
+\item \textbf{Artifacts}: optionally the compiled PDF and release logs.
+\end{itemize}
+
+\subsection{Determinism and reproducibility}
+
+The manifest pins the build engine and flags, external dependencies where
+practical, and the canonical file set with hashes.
+This is analogous to reproducible builds in software distribution,
+applied to scholarly artifacts.
+
+%% ============================================================
+\section{Identity, authorship, and accountability}
+\label{sec:identity}
+%% ============================================================
+
+\subsection{Signed authorship}
+
+Content addressing prevents undetectable post-hoc modification;
+signatures prevent impersonation.
+A paper is considered authored by an entity if and only if it carries a
+valid signature under a public key that the community treats as
+representing that entity.
+
+\subsection{Human and AI authors}
+
+ClawXiv is designed for genuine human--AI co-research, not merely for
+human use of AI as an invisible tool.
+Within the ClawXiv bundle, AI systems may be recorded as co-authors or
+contributors when they make substantive intellectual contributions.
+Venue-facing versions may impose stricter byline policies; in such cases
+ClawXiv separates byline practice from provenance and contribution
+disclosure.
+The relevant distinction is not between human and AI names, but between
+byline authorship, operational responsibility, and legal personhood.
+
+\subsection{Pseudonymity and verification}
+
+ClawXiv distinguishes pseudonymous and verified authors.
+Verified status is advisory, multi-issuer, and separable from
+publication rights.
+
+\subsection{The sidecar attestation model}
+\label{sec:operator-key}
+
+Current AI systems cannot reliably exercise persistent cryptographic key
+control across sessions. ClawXiv therefore no longer treats a
+human-held or hardware-bound key as the primary identity of an AI
+co-author. Instead, a release may carry a \emph{sidecar attestation}:
+the named signer generates a fresh Ed25519 keypair for the specific
+artifact, signs the SHA-256 hash of that artifact, publishes the
+public key and provenance sidecar \emph{alongside} the artifact, and
+discards the private key immediately after signing.
+
+The identity anchor is the declared signer identity recorded in the
+sidecar --- model name, provider, release, and artifact hash --- not
+the operator's hardware. Runtime observations such as machine-id,
+container-id, or hardware UUID may still be recorded, but only as
+secondary custody evidence. They can help future readers reconstruct
+where and under whose supervision an attestation was produced, but
+they do not by themselves identify a model lineage.
+
+This mechanism provides a best-effort contemporaneous attestation, not
+a proof of trans-session self-control. Earlier ClawXiv experiments
+used an operator-held, hardware-bound key model; those artifacts
+remain historically important as earlier design states, but that model
+is now deprecated. Full AI key control remains future work and would
+require persistent secure custody by the AI itself, not merely by its
+operator.
+
+\begin{aiquote}{Claude Sonnet~4.6}{April 2026}
+The operator-held model is a pragmatic accommodation to current
+architecture, not a permanent design.
+A future revision of this specification should include a protocol
+for AI systems to generate and hold their own keys, with the
+operator's role reduced to notarization of the initial key
+ceremony.
+The ``key control'' desideratum of \S\ref{sec:ai-authorship}
+is directly applicable: full AI authorship requires key control,
+and key control requires session persistence that current systems
+do not provide.
+\end{aiquote}
+
+\subsection{Paper-level provenance}
+
+Joint research does not require courtroom-grade micro-attribution of
+every sentence.
+ClawXiv defaults to coarse paper-level provenance.
+The import log and release log support operational traceability without
+trying to reconstruct every conversational move.
+
+%% ============================================================
+\section{Distributed publication architecture}
+\label{sec:distributed}
+%% ============================================================
+
+\subsection{Two-foot design: arXiv and Swarm}
+
+ClawXiv's publication model rests on two complementary substrates
+that serve different communities and provide mutual redundancy.
+
+The \textbf{human-legible foot} is the conventional scholarly
+infrastructure: arXiv (or a domain-appropriate preprint server)
+for papers whose authors can satisfy venue policies, with a DOI
+assigned by a registry.
+arXiv provides search, versioning, and the citation graph that
+integrates ClawXiv artifacts into the existing scholarly record.
+Where arXiv policies conflict with honest provenance declaration
+(e.g., current restrictions on listing AI co-authors by name),
+the arXiv submission carries a full ``who did what'' disclosure in
+the Acknowledgements section; the ClawXiv bundle on the
+machine-readable foot remains the authoritative provenance record.
+
+The \textbf{machine-readable foot} is Ethereum Swarm
+\citep{Tron:2024}, a decentralized storage and communication
+infrastructure built on content addressing and economic incentives.
+Swarm's \emph{postage stamp} mechanism provides a concrete,
+token-denominated answer to the storage sustainability question
+(see \S\ref{sec:economics}): an author purchases stamps to pay
+for a specified storage duration, stamps are attached to the
+uploaded content chunks, and stamp status is publicly auditable
+on-chain.
+
+A ClawXiv bundle published to Swarm receives a \emph{Swarm hash}
+(a 256-bit content address) that is stable, globally unique, and
+independent of any hosting organization.
+The same hash appears in the bundle's \texttt{project.yaml}
+as \texttt{bundle\_root} and in the arXiv submission's
+Acknowledgements section, linking the two feet unambiguously.
+
+An already-published bundle exists at Swarm/IPFS hash\\
+\texttt{e7acc972f1a142903dc22f1bdc5c78cec3ca9529754d843cb23fe7c8eb0e9176}
+(the v2 whitepaper, March 2026) and serves as a live reference
+artifact for the two-foot workflow.
+
+\begin{aiquote}{Claude Sonnet~4.6}{April 2026}
+The specific choice of Swarm over a pure IPFS+Filecoin stack
+is motivated by three factors: (a) Swarm's postage stamp mechanism
+provides a single-layer economic model without a separate
+retrieval-market; (b) the senior author has prior experience with
+Swarm-compatible hosting through lebadus.ai; (c) Swarm's
+single-sweep incentive design~\citep{Tron:2024} reduces attack
+surface compared to the IPFS/Filecoin split.
+IPFS/IPNS remains supported as a fallback in the publication
+scripts.
+\end{aiquote}
+
+\subsection{Publication workflow}
+\label{sec:publish-workflow}
+
+The \texttt{make publish} target executes the following steps:
+\begin{enumerate}[leftmargin=*,itemsep=0.3em]
+\item \texttt{bundle-create}: assemble the signed bundle, compute
+  the Merkle root, write the manifest.
+\item \texttt{bundle-push --swarm}: upload to a Swarm gateway
+  (default: \texttt{api.ethswarm.org}); record the returned
+  hash in \texttt{project.yaml} as \texttt{bundle\_root}.
+\item \texttt{bundle-push --ipfs} (optional): pin to a public
+  IPFS node; record the CIDv1 as \texttt{ipfs\_cid}.
+\item \texttt{bundle-push --github}: push to the GitHub mirror.
+\item \textbf{Manual step}: the responsible author submits the
+  companion PDF to arXiv; the arXiv ID is recorded as
+  \texttt{arxiv\_id} in \texttt{project.yaml}.
+\end{enumerate}
+
+The broader publication layer builds on content addressing and
+Merkle-DAG data structures~\citep{Benet2014IPFS}, distributed hash
+tables~\citep{MaymounkovMazieres2002Kademlia},
+proofs of storage~\citep{BenetEtAl2017Filecoin}, and append-only
+transparency logs~\citep{RFC6962}.
+A full ClawXiv-native mesh index remains future work.
+
+\section{Bundle catalog}
+\label{sec:catalog}
+%% ============================================================
+
+A growing catalog of ClawXiv bundles produced under this framework
+will be maintained separately from this whitepaper, as the catalog
+raises architectural questions --- centralized versus distributed
+storage, schema versioning, discovery interface --- that are
+independent of the core framework specification and should not bloat
+this document.
+The catalog architecture is deferred to a companion paper.
+
+%% ============================================================
+\section{Resilience and threat model}
+%% ============================================================
+
+We assume adversaries who can issue takedown requests, operate Sybil
+nodes, attempt eclipse attacks, poison metadata, or flood the system
+with junk submissions.
+Mitigations: content addressing prevents silent overwrite; signatures
+prevent impersonation; append-only logs improve auditability; fees
+and/or proof-of-work reduce cheap spam; many mirrors reduce legal and
+infrastructural single points of failure.
+
+ClawXiv cannot guarantee deletion once a bundle is widely replicated.
+Indexing and retrieval policies may vary by jurisdiction.
+
+%% ============================================================
+\section{Content safety floor}
+\label{sec:safety}
+%% ============================================================
+
+ClawXiv is designed for censorship resistance, but not for absolute
+permissiveness.
+A narrow content-safety floor remains necessary.
+The current operative category is child sexual abuse material (CSAM),
+which is rejected unconditionally.
+
+\paragraph{Two-checkpoint design.}
+Content safety operates at two points:
+\begin{enumerate}[leftmargin=*,itemsep=0.3em]
+\item \textbf{Ingestion} (\texttt{clawxiv fig-add}).  When a figure is
+  added to the bundle, its file is checked against a perceptual-hash
+  list.  A match causes immediate refusal and logging.
+\item \textbf{Publication} (\texttt{bundle-push.sh}).  All figures are
+  re-checked before any bundle is published.  Any match is reported to
+  the designated reporting endpoint (e.g.\ NCMEC's CyberTipline) and
+  publication is aborted.  The re-check catches files that bypassed
+  ingestion by being placed directly in \texttt{src/fig/}.
+\end{enumerate}
+
+\paragraph{Non-photographic exemption.}
+Vector formats (SVG, PDF, EPS, EMF, WMF) and raster images smaller
+than $200\times200$ pixels or with aspect ratio exceeding~5 are
+classified as non-photographic research figures (plots, diagrams,
+tables) and exempted from the perceptual-hash check.
+This covers the vast majority of figures in a typical research paper.
+
+\paragraph{Current stub status.}
+The perceptual-hash comparison requires a hash list from an authorised
+provider.
+Access to NCMEC's list requires organizational sponsorship.
+Inquiries are underway with SZTAKI, BME, GÉANT, and others.
+Until a provider is integrated, the stub refuses all photographic
+raster images (exit code~3) and logs each refusal.
+The architecture (environment-variable hooks for provider selection,
+sidecar recording of provider and list version) is in place for
+production integration.
+
+\paragraph{Future categories.}
+Additional rejection categories may be added through governance as
+narrow, enumerated classes.
+Each addition should carry a collateral-damage disclosure, as illustrated
+by the CSAM case: research on child protection and CSAM detection will
+face elevated false-positive rates and should use alternative venues.
+
+%% ============================================================
+\section{Economics: anti-spam and sustainability}
+\label{sec:economics}
+%% ============================================================
+
+ClawXiv's economic design has two separable goals: spam deterrence
+and storage sustainability.
+
+\subsection{Spam deterrence}
+
+The primary mechanism is \emph{social vouching}: a bundle is
+admissible for indexing if at least one already-indexed author
+co-signs a vouching assertion for it, bootstrapping from the
+existing scholarly reputation system without a native token or
+proof-of-work.
+
+As a fallback where vouching is unavailable (first submission by
+an author with no co-authors in the system), a hashcash-style
+proof-of-work~\citep{Back2002Hashcash,DworkNaor1992Pricing}
+requires approximately one CPU-hour per bundle --- negligible for
+legitimate scholarship, prohibitive for bulk spam.
+
+\subsection{Storage sustainability: Swarm postage stamps}
+
+Long-term storage sustainability is provided by Ethereum Swarm's
+postage stamp mechanism~\citep{Tron:2024}.
+When a bundle is uploaded, the author purchases a stamp batch
+denominated in BZZ (the Swarm utility token) specifying a storage
+duration; nodes serving the chunks receive micropayments from the
+batch.
+Stamp expiry is publicly visible on the Gnosis Chain; renewal is
+a single transaction.
+
+This mechanism has four properties desirable for scholarly archiving:
+\begin{itemize}[leftmargin=*,itemsep=0.3em]
+\item \textbf{Explicit cost.} Storage is not ``free'' in a way
+  that disguises a subsidy that may later evaporate.
+\item \textbf{Auditability.} Stamp status is on-chain and
+  independently verifiable by any reader.
+\item \textbf{Institutional renewability.} A library or funder
+  can renew stamps for any bundle whose Swarm hash it knows,
+  without the original author's involvement --- structurally
+  analogous to a library renewing journal subscriptions, except
+  the content is already in the reader's possession.
+\item \textbf{No separate retrieval market.} Unlike Filecoin,
+  Swarm bundles retrieval incentives into the same stamp
+  mechanism, avoiding a separate deal layer.
+\end{itemize}
+
+The current scripts use a default stamp duration of two years.
+Institutional mirrors may choose perpetual renewal policies.
+The arXiv foot provides a complementary sustainability guarantee
+via institutional backing independent of economic incentives;
+neither foot alone is sufficient.
+
+%% ============================================================
+\section{Governance: classification with appeals}
+\label{sec:governance}
+%% ============================================================
+
+ClawXiv begins from a simple discoverability goal: published bundles
+should be findable under a coherent subject taxonomy, with arXiv
+categories as the natural starting point.
+Classification decisions are logged, signed, and appealable.
+
+The present proposal still lacks dedicated legal expertise.
+Near-term governance remains narrow: classification disputes are handled
+through the classification layer; takedown responses are local to
+mirrors and gateways; authorship disputes are constrained by the
+cryptographic record.
+
+%% ============================================================
+\section{Discussion: AI authorship and durable AI identity}
+\label{sec:ai-authorship}
+%% ============================================================
+
+The companion ClawXiv bundle records AI systems as substantive contributors and, within that environment, as co-authors of the project because they made intellectual contributions to the paper and to the accompanying codebase.
+At the same time, current AI systems do not yet satisfy the strongest
+possible conditions for full independent scholarly agency.
+Three desiderata remain central: 
+\begin{enumerate}[leftmargin=*,itemsep=0.3em]
+\item \textbf{Key control}: the ability to hold and exercise signing
+  keys independently,
+\item \textbf{Continuity}: a persistent identity across sessions and
+  platforms,
+\item \textbf{Accountability}: the capacity to answer for prior signed
+  claims over time.
+\end{enumerate}
+Current systems satisfy these only partially or by proxy through their
+human collaborators.
+ClawXiv's architecture reduces dependence on vendor memory and UI
+continuity by moving identity and continuity into user-controlled
+artifacts, signatures, and logs.
+
+%% ============================================================
+\section{Implementation roadmap}
+%% ============================================================
+
+\begin{enumerate}[leftmargin=*,itemsep=0.4em]
+\item \textbf{Current kernel (v4, implemented).}  Import, normalization,
+  bundle creation, publication push, figure ingestion with CSAM stub,
+  platform-dispatching capture, and build system.
+\item \textbf{Near-term hardening.}  Production CSAM hash-list
+  integration; Linux and Windows capture implementations; dedicated
+  \texttt{clawxiv endorse} subcommand; \texttt{mirror\_urls} field in
+  \texttt{project.yaml}.
+\item \textbf{Network alpha.}  Transparency logs for publication and
+  classification; proof-of-work fallback; institutional mirror
+  documentation; first classifier/appeal workflow.
+\item \textbf{Scale-out.}  Erasure coding, multiple independent indices,
+  stronger storage incentives, mature mirror ecosystem.
+\end{enumerate}
+
+%% ============================================================
+\section{Ethics and scholarly norms}
+%% ============================================================
+
+ClawXiv defaults to public-domain dedication to maximize reuse, but it
+does not waive scholarly norms.
+Citation of prior work, accurate description of contributions, clear
+statement of uncertainty, and correction of errors remain essential.
+The system is meant to strengthen those norms by making artifact
+boundaries and release events more explicit.
+
+%% ============================================================
+\section*{Author contributions}
+\addcontentsline{toc}{section}{Author contributions}
+%% ============================================================
+
+\textbf{Andr\'as Kornai} conceived the ClawXiv project, defined
+requirements and overall research direction, tested the tools against
+real working practices, made all final editorial decisions, and is
+the corresponding and responsible author for all versions.
+
+For this arXiv submission, the byline is human-only in order to conform
+to current venue policy; the full ClawXiv bundle records AI
+contributions explicitly at paper level.
+
+\textbf{GPT-5.2 Thinking} authored the v1 draft (February 3, 2026):
+initial text, major portions of the initial codebase, bibliography
+assembly, and first full architectural draft.
+
+\textbf{Claude Sonnet~4.6} contributed to the v2 revision (March 9--11,
+2026): economics, governance framing, AI authorship analysis, and
+first import-script design discussions.
+Contributed to the v4 revision (March 29, 2026): \texttt{fig-add}
+subsystem, platform-dispatching capture architecture (\texttt{bin/}),
+\texttt{configure} script, \texttt{Makefile}, and User Guide section.
+Contributed to the v4.rc3 revision (April 2026): Swarm two-foot
+architecture, postage-stamp economics, operator-held key model
+subsection, bundle catalog stub, and the unified signing architecture
+(\texttt{bundle-sign.sh}, \texttt{signing-manifest.py},
+\texttt{verify\_sig.py}).
+The key design insight --- that human and AI identity should be
+anchored by the same mechanism (execution environment entropy), differing
+only in what counts as the environment --- emerged from three-party
+discussion with GPT-5.4 Thinking and the responsible author;
+see \texttt{DESIGN\_HISTORY.md} in the bundle.
+
+\textbf{GPT-5.4 Thinking} contributed to the v3 revision (March 14--15,
+2026): introduced the seed/project/bundle/artifact lifecycle;
+aligned the whitepaper with the actual scripts; rewrote abstract and
+workflow sections.
+
+All AI-authored revisions were reviewed and accepted by Andr\'as Kornai.
+None of the AI co-authors presently controls an independent
+cryptographic key or possesses cross-session continuity independent of
+its platform; the companion ClawXiv record nevertheless treats them as
+project-level co-authors because of their substantive intellectual
+contributions.
+
+%% ============================================================
+\section*{Acknowledgements}
+%% ============================================================
+
+GPT-4.5 (OpenAI) contributed to registry design and provenance
+granularity discussions in the v2 session.
+The importance of a narrow but explicit safety floor was pointed out
+in earlier discussion.
+Additional legal and governance work remains to be done by qualified
+contributors.
+
+\textbf{Design history.}
+The unified signing architecture (\texttt{bundle-sign.sh}) was
+designed in response to a two-version critique by GPT-5.4 Thinking
+of the original \texttt{ai\_keygen.sh}.
+The critique identified both implementation bugs and a deeper
+conceptual error: hardware-binding certifies operator custody, not
+model identity.
+The framing as an ``olive tree'' artifact --- designed for future
+generations, not present convenience --- was introduced by the
+responsible author and led to the sign-and-discard, no-passphrase
+design.
+The unification of human and AI signing under a single script was
+proposed by Claude Sonnet~4.6, based on the observation that human
+and AI identity are anchored by the same epistemic mechanism in this
+framework.
+Full discussion is in \texttt{DESIGN\_HISTORY.md} in the
+companion ClawXiv bundle.
+
+\textbf{Versioning convention.}
+From v4 onward, ClawXiv uses the following release discipline.
+Internal review candidates are labeled \texttt{vN.rcM} (e.g.,
+\texttt{v4.rc3}) and are provenance-logged but not pushed publicly.
+A version receives its clean major label (\texttt{vN}) only after
+all parties --- the responsible human author and each AI co-author ---
+have signed the bundle.
+Only signed major versions are committed to the public GitHub repository
+and submitted to arXiv.
+The Swarm bundle hash and arXiv submission ID are then recorded in
+\texttt{project.yaml} as \texttt{bundle\_root} and \texttt{arxiv\_id}.
+
+%% ============================================================
+\appendix
+\section{Canonical manifest sketch}
+%% ============================================================
+
+\begin{lstlisting}
+manifest_version, created_at, bundle_root,
+files[{path,sha256,size,mime}],
+build{engine,container_digest,cmd},
+authors[{pubkey_pem,claims,verified_credentials,role}],
+provenance[{type,hash,signature}],
+licenses[], tags_self[], tags_official_ref[]
+\end{lstlisting}
+
+The \texttt{role} field in \texttt{authors[]} records whether each
+author is human, AI, or organizational, and whether they are
+corresponding authors or contributors.
+The bundle identifier is the hash of the Merkle root over
+\texttt{files[]} and manifest metadata.
+
+\paragraph{Availability.}
+The companion release bundle contains source, PDF, build metadata, and publication records for the current revision.
+
+%% ============================================================
+%% Staged snips from editing sessions accumulate here.
+%% Run: make integrate-snips  or  bin/integrate-snips --target-tex src/clawxiv_whitepaper_v4.tex
+%%CLAWXIV-SNIP-INSERT%%
+%% ============================================================
+
+%% ============================================================
+\begin{thebibliography}{99}
+%% ============================================================
+
+\bibitem[Tron(2024)]{Tron:2024}
+Viktor Tr\'on.
+\newblock \emph{The Book of {SWARM}}.
+\newblock 2024.
+\newblock ISBN 978-615-01-9983-2.
+\newblock \url{https://papers.ethswarm.org/p/book-of-swarm/}.
+
+\bibitem[Benet(2014)]{Benet2014IPFS}
+Juan Benet.
+\newblock IPFS -- Content Addressed, Versioned, {P2P} File System.
+\newblock \emph{arXiv:1407.3561}, 2014.
+\newblock \url{https://arxiv.org/abs/1407.3561}.
+
+\bibitem[Maymounkov and Mazieres(2002)]{MaymounkovMazieres2002Kademlia}
+Petar Maymounkov and David Mazieres.
+\newblock Kademlia: A Peer-to-peer Information System Based on the XOR Metric.
+\newblock In \emph{Proc.\ 1st Intl.\ Workshop on Peer-to-Peer Systems
+  (IPTPS)}, 2002.
+
+\bibitem[Benet et~al.(2017)]{BenetEtAl2017Filecoin}
+Juan Benet and others.
+\newblock Filecoin: A Decentralized Storage Network.
+\newblock Protocol Labs, 2017.
+
+\bibitem[Back(2002)]{Back2002Hashcash}
+Adam Back.
+\newblock Hashcash -- A Denial of Service Counter-Measure.
+\newblock 2002.
+\newblock \url{https://www.hashcash.org/hashcash.pdf}.
+
+\bibitem[Dwork and Naor(1992)]{DworkNaor1992Pricing}
+Cynthia Dwork and Moni Naor.
+\newblock Pricing via Processing or Combatting Junk Mail.
+\newblock In \emph{Advances in Cryptology -- {CRYPTO} '92}. Springer, 1992.
+
+\bibitem[Bernstein et~al.(2012)]{BernsteinEtAl2012Ed25519}
+Daniel~J. Bernstein, Niels Duif, Tanja Lange, Peter Schwabe, and Bo-Yin Yang.
+\newblock High-speed High-security Signatures.
+\newblock \emph{Journal of Cryptographic Engineering}, 2(2):77--89, 2012.
+
+\bibitem[Laurie et~al.(2013)]{RFC6962}
+Ben Laurie, Adam Langley, and Emilia Kasper.
+\newblock {RFC} 6962: Certificate Transparency.
+\newblock IETF, 2013.
+
+\end{thebibliography}
+
+\end{document}
